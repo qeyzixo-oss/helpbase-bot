@@ -51,8 +51,8 @@ E_GEAR    = ("5974104203688152439", "⚙️")
 E_CROWN   = ("6129805886383723340", "👑")
 
 # ─── НАСТРОЙКИ ────────────────────────────────────────────────
-BOT_TOKEN = os.environ.get("BOT_TOKEN", "ВСТАВЬ_ТОКЕН_ОТ_BOTFATHER")
-ADMIN_ID   = int(os.environ.get("ADMIN_ID", "123456789"))
+BOT_TOKEN = os.environ.get("BOT_TOKEN", "8049793687:AAHWbzhlKMZH4P1btZ5qNNcMtDR1jdus4OU")
+ADMIN_ID   = int(os.environ.get("ADMIN_ID", "8658447894"))
 # ──────────────────────────────────────────────────────────────
 
 DB_PATH = "scammers.db"
