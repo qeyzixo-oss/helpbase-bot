@@ -1,17 +1,56 @@
 import logging
 import asyncio
 import sqlite3
+import os
 from telegram import (
-    Update, InlineKeyboardButton, InlineKeyboardMarkup
+    Update, InlineKeyboardButton, InlineKeyboardMarkup, MessageEntity
 )
 from telegram.ext import (
     Application, CommandHandler, MessageHandler,
     CallbackQueryHandler, filters, ContextTypes
 )
 
+
+# ─── ПРЕМ ЭМОДЗИ ──────────────────────────────────────────────
+def build_msg(parts: list) -> tuple:
+    """
+    parts — список строк или (emoji_id, placeholder).
+    Возвращает (text, entities) для отправки с прем эмодзи.
+    """
+    text = ""
+    entities = []
+    for p in parts:
+        if isinstance(p, str):
+            text += p
+        else:
+            emoji_id, placeholder = p
+            entities.append(MessageEntity(
+                type=MessageEntity.CUSTOM_EMOJI,
+                offset=len(text),
+                length=len(placeholder),
+                custom_emoji_id=emoji_id,
+            ))
+            text += placeholder
+    return text, entities
+
+
+# Emoji ID константы (emoji_id, placeholder)
+E_PC      = ("5330483571763203568", "💻")
+E_IPHONE  = ("5220087772496280642", "🍏")
+E_STAR    = ("5463215554611405905", "⭐️")
+E_ANDROID = ("6048857619848761040", "👽")
+E_DOWN    = ("5301038027601098171", "👇")
+E_GREEN   = ("5339112148175959615", "🟢")
+E_DOC     = ("5370604433233177619", "📄")
+E_INBOX   = ("5879884569812931912", "📥")
+E_BELL    = ("5404516769152916225", "🔔")
+E_CHECK   = ("5237699328843200968", "✅")
+E_GEAR    = ("5974104203688152439", "⚙️")
+E_CROWN   = ("6129805886383723340", "👑")
+
 # ─── НАСТРОЙКИ ────────────────────────────────────────────────
-BOT_TOKEN = "8049793687:AAGMQYh13OOeUNJwoeoV4RMTS_4oxJSaMXM"
-ADMIN_ID   = 8658447894  # Вставь свой Telegram user ID (число) 
+BOT_TOKEN = os.environ.get("BOT_TOKEN", "ВСТАВЬ_ТОКЕН_ОТ_BOTFATHER")
+ADMIN_ID   = int(os.environ.get("ADMIN_ID", "123456789"))
 # ──────────────────────────────────────────────────────────────
 
 DB_PATH = "scammers.db"
@@ -126,7 +165,7 @@ def kb_device():
     return InlineKeyboardMarkup([
         [
             InlineKeyboardButton("🍏 iPhone", callback_data="device_iphone"),
-            InlineKeyboardButton("👾 Android", callback_data="device_android"),
+            InlineKeyboardButton("👽 Android", callback_data="device_android"),
         ]
     ])
 
@@ -188,16 +227,17 @@ async def cmd_start(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
 
     device = get_device(user.id)
     if device:
-        # Устройство уже выбрано — сразу меню
         await update.message.reply_text(
             "👋 Привет, выбирай нужную кнопку.",
             reply_markup=kb_main()
         )
     else:
+        text, entities = build_msg([
+            E_PC, " Какой у тебя смартфон?\n\n",
+            E_DOWN, " Выбери нужную кнопку",
+        ])
         await update.message.reply_text(
-            "💻 Какой у тебя смартфон?\n\n"
-            "👇 Выбери нужную кнопку",
-            reply_markup=kb_device()
+            text=text, entities=entities, reply_markup=kb_device()
         )
 
 
@@ -229,9 +269,11 @@ async def callback_handler(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
 
     # ── Смена устройства ──
     elif data == "menu_device":
+        text, entities = build_msg([
+            E_PC, " Выбери тип устройства:",
+        ])
         await q.edit_message_text(
-            "💻 Выбери тип устройства:",
-            reply_markup=kb_device()
+            text=text, entities=entities, reply_markup=kb_device()
         )
 
     # ── Внести в лист ──
@@ -243,11 +285,13 @@ async def callback_handler(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
             )
             return
         user_states[user.id] = "awaiting_add"
-        await q.edit_message_text(
-            "🟢 Выбрана категория «🗂 Внести в лист».\n"
+        text, entities = build_msg([
+            E_GREEN, " Выбрана категория «", E_DOC, " Внести в лист».\n"
             "Слушаю — какого пользователя нужно занести?\n\n"
             "Отправь @username или числовой ID",
-            reply_markup=kb_back()
+        ])
+        await q.edit_message_text(
+            text=text, entities=entities, reply_markup=kb_back()
         )
 
     # ── Вынести из листа ──
@@ -259,10 +303,12 @@ async def callback_handler(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
             )
             return
         user_states[user.id] = "awaiting_remove"
-        await q.edit_message_text(
-            "🟢 Выбрана категория «🗑 Вынести из листа».\n"
+        text, entities = build_msg([
+            E_GREEN, " Выбрана категория «🗑 Вынести из листа».\n"
             "Кого удаляем? Отправь @username или ID:",
-            reply_markup=kb_back()
+        ])
+        await q.edit_message_text(
+            text=text, entities=entities, reply_markup=kb_back()
         )
 
     # ── Проверить юзера ──
@@ -325,10 +371,12 @@ async def message_handler(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
         display = f"@{username}" if username else f"ID {uid}"
 
         if added:
+            text, entities = build_msg([
+                E_BELL, " Уведомления! ",
+                E_CHECK, f" Успешно — добавлен в лист: {display}",
+            ])
             await update.message.reply_text(
-                f"🔔 Уведомление!\n"
-                f"✅ Успешно — добавлен в лист: {display}",
-                reply_markup=kb_main()
+                text=text, entities=entities, reply_markup=kb_main()
             )
         else:
             await update.message.reply_text(
