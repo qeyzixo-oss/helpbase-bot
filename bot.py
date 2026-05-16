@@ -49,7 +49,7 @@ E_GEAR    = ("5974104203688152439", "⚙️")
 E_CROWN   = ("6129805886383723340", "👑")
 
 # ─── НАСТРОЙКИ ────────────────────────────────────────────────
-BOT_TOKEN = os.environ.get("BOT_TOKEN", "8049793687:AAGMQYh13OOeUNJwoeoV4RMTS_4oxJSaMXM")
+BOT_TOKEN = os.environ.get("BOT_TOKEN", "8714619691:AAHIQCOEggcdXCNIDf1jTGD9qFJ8cZs5kPk")
 ADMIN_ID   = int(os.environ.get("ADMIN_ID", "8658447894"))
 # ──────────────────────────────────────────────────────────────
 
