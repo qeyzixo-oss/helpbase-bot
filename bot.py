@@ -2,8 +2,10 @@ import logging
 import asyncio
 import sqlite3
 import os
+import re
 from telegram import (
-    Update, InlineKeyboardButton, InlineKeyboardMarkup, MessageEntity
+    Update, InlineKeyboardButton, InlineKeyboardMarkup,
+    MessageEntity, ReplyKeyboardMarkup, KeyboardButton
 )
 from telegram.ext import (
     Application, CommandHandler, MessageHandler,
@@ -49,8 +51,8 @@ E_GEAR    = ("5974104203688152439", "⚙️")
 E_CROWN   = ("6129805886383723340", "👑")
 
 # ─── НАСТРОЙКИ ────────────────────────────────────────────────
-BOT_TOKEN = os.environ.get("BOT_TOKEN", "8049793687:AAHWbzhlKMZH4P1btZ5qNNcMtDR1jdus4OU")
-ADMIN_ID   = int(os.environ.get("ADMIN_ID", "8658447894"))
+BOT_TOKEN = os.environ.get("BOT_TOKEN", "ВСТАВЬ_ТОКЕН_ОТ_BOTFATHER")
+ADMIN_ID   = int(os.environ.get("ADMIN_ID", "123456789"))
 # ──────────────────────────────────────────────────────────────
 
 DB_PATH = "scammers.db"
@@ -170,14 +172,25 @@ def kb_device():
     ])
 
 
-def kb_main():
-    return InlineKeyboardMarkup([
-        [InlineKeyboardButton("🗂 Внести в лист",    callback_data="menu_add")],
-        [InlineKeyboardButton("🗑 Вынести из листа", callback_data="menu_remove")],
-        [InlineKeyboardButton("🔍 Проверить юзера",  callback_data="menu_check")],
-        [InlineKeyboardButton("🤖 Подключить бота",  callback_data="menu_connect")],
-        [InlineKeyboardButton("📱 Тип устройства",   callback_data="menu_device")],
-    ])
+def kb_main(is_admin=False):
+    buttons = []
+    if is_admin:
+        buttons.append([InlineKeyboardButton("🗂 Внести в лист",    callback_data="menu_add")])
+        buttons.append([InlineKeyboardButton("🗑 Вынести из листа", callback_data="menu_remove")])
+    buttons.append([InlineKeyboardButton("🔍 Проверить юзера",  callback_data="menu_check")])
+    buttons.append([InlineKeyboardButton("📩 Предложить юзера", callback_data="menu_suggest")])
+    buttons.append([InlineKeyboardButton("🤖 Подключить бота",  callback_data="menu_connect")])
+    buttons.append([InlineKeyboardButton("📱 Тип устройства",   callback_data="menu_device")])
+    return InlineKeyboardMarkup(buttons)
+
+
+def kb_reply():
+    """Нижняя кнопка под полем ввода."""
+    return ReplyKeyboardMarkup(
+        [[KeyboardButton("👤 Проверить пользователя")]],
+        resize_keyboard=True,
+        one_time_keyboard=False
+    )
 
 
 def kb_understood():
@@ -226,10 +239,16 @@ async def cmd_start(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
         return
 
     device = get_device(user.id)
+    is_admin = user.id == ADMIN_ID
     if device:
         await update.message.reply_text(
-            "👋 Привет, выбирай нужную кнопку.",
-            reply_markup=kb_main()
+            "👋 Главное меню. Выбирай нужную кнопку.",
+            reply_markup=kb_main(is_admin)
+        )
+        # Показываем нижнюю кнопку
+        await update.message.reply_text(
+            "👇 Или просто отправь @username для быстрой проверки",
+            reply_markup=kb_reply()
         )
     else:
         text, entities = build_msg([
@@ -248,23 +267,39 @@ async def callback_handler(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
     user = q.from_user
     data = q.data
 
+    is_admin = user.id == ADMIN_ID
+
     # ── Выбор устройства ──
     if data.startswith("device_"):
         device = "iphone" if data == "device_iphone" else "android"
         save_device(user.id, device)
         user_devices[user.id] = device
-        label = "🍏 iPhone" if device == "iphone" else "👾 Android"
+        label = "🍏 iPhone" if device == "iphone" else "👽 Android"
         await q.edit_message_text(
             f"✅ Устройство сохранено: {label}\n\n"
-            "👋 Привет, выбирай нужную кнопку.",
-            reply_markup=kb_main()
+            "👋 Главное меню. Выбирай нужную кнопку.",
+            reply_markup=kb_main(is_admin)
+        )
+        await ctx.bot.send_message(
+            user.id,
+            "👇 Или просто отправь @username для быстрой проверки",
+            reply_markup=kb_reply()
         )
 
     # ── Меню назад ──
     elif data == "menu_back":
         await q.edit_message_text(
             "👋 Главное меню. Выбирай нужную кнопку.",
-            reply_markup=kb_main()
+            reply_markup=kb_main(is_admin)
+        )
+
+    # ── Предложить юзера (для всех) ──
+    elif data == "menu_suggest":
+        user_states[user.id] = "awaiting_suggest"
+        await q.edit_message_text(
+            "📩 Отправь @username того, кого хочешь предложить в лист.\n"
+            "Я проверю и добавлю если нужно.",
+            reply_markup=kb_back()
         )
 
     # ── Смена устройства ──
@@ -278,17 +313,10 @@ async def callback_handler(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
 
     # ── Внести в лист ──
     elif data == "menu_add":
-        if user.id != ADMIN_ID:
-            await q.edit_message_text(
-                "❌ Доступ запрещён. Только создатель бота может редактировать список.",
-                reply_markup=kb_back()
-            )
-            return
         user_states[user.id] = "awaiting_add"
         text, entities = build_msg([
             E_GREEN, " Выбрана категория «", E_DOC, " Внести в лист».\n"
-            "Слушаю — какого пользователя нужно занести?\n\n"
-            "Отправь @username или числовой ID",
+            "Отправь @username или числовой ID мошенника:",
         ])
         await q.edit_message_text(
             text=text, entities=entities, reply_markup=kb_back()
@@ -347,6 +375,15 @@ async def message_handler(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
     state = user_states.get(user.id)
 
     if not state:
+        # Нажата нижняя кнопка "Проверить пользователя"
+        if text == "👤 Проверить пользователя":
+            user_states[user.id] = "awaiting_check"
+            await update.message.reply_text(
+                "🔍 Напиши @username или ID человека, которого подозреваешь:",
+                reply_markup=kb_back()
+            )
+            return
+
         # Если текст начинается с @ — автопроверка
         if text.startswith("@"):
             username = text.lstrip("@").lower()
@@ -361,12 +398,12 @@ async def message_handler(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
                     f"☢️ МОШЕННИК ПОД {display}\n"
                     f"Есть в нашем листе! Блокируй — не трать время ☢️"
                     f"{link_text}",
-                    reply_markup=kb_main()
+                    reply_markup=kb_main(user.id == ADMIN_ID)
                 )
             else:
                 await update.message.reply_text(
                     f"✅ @{username} — чисто. В нашем листе отсутствует.",
-                    reply_markup=kb_main()
+                    reply_markup=kb_main(user.id == ADMIN_ID)
                 )
         return
 
@@ -383,21 +420,38 @@ async def message_handler(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
         else:
             username = text.lower().lstrip("@")
 
-        added = db_add(username=username, uid=uid, added_by=user.id)
+        # Пытаемся получить числовой ID через Telegram
+        resolved_uid = uid
+        if username and not uid:
+            try:
+                chat_info = await ctx.bot.get_chat(f"@{username}")
+                resolved_uid = str(chat_info.id)
+            except Exception:
+                resolved_uid = None
+
+        added = db_add(username=username, uid=resolved_uid, added_by=user.id)
         display = f"@{username}" if username else f"ID {uid}"
+        id_info = f" (ID: {resolved_uid})" if resolved_uid else ""
 
         if added:
-            text, entities = build_msg([
+            # Если добавил не админ — уведомляем админа
+            if user.id != ADMIN_ID:
+                await ctx.bot.send_message(
+                    ADMIN_ID,
+                    f"📩 @{user.username or user.id} добавил в лист:\n"
+                    f"{display}{id_info}"
+                )
+            text_msg, entities = build_msg([
                 E_BELL, " Уведомления! ",
-                E_CHECK, f" Успешно — добавлен в лист: {display}",
+                E_CHECK, f" Успешно — добавлен в лист: {display}{id_info}",
             ])
             await update.message.reply_text(
-                text=text, entities=entities, reply_markup=kb_main()
+                text=text_msg, entities=entities, reply_markup=kb_main(user.id == ADMIN_ID)
             )
         else:
             await update.message.reply_text(
                 f"⚠️ {display} уже есть в листе.",
-                reply_markup=kb_main()
+                reply_markup=kb_main(user.id == ADMIN_ID)
             )
 
     # ── Удалить из листа ──
@@ -453,6 +507,24 @@ async def message_handler(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
                 "✅ Чисто. В нашем листе отсутствует.",
                 reply_markup=kb_main()
             )
+
+    # ── Предложить юзера (все пользователи) ──
+    elif state == "awaiting_suggest":
+        user_states.pop(user.id, None)
+        suggested = text.lstrip("@").lower()
+        display = f"@{suggested}"
+
+        # Уведомляем админа
+        await ctx.bot.send_message(
+            ADMIN_ID,
+            f"📩 Пользователь @{user.username or user.id} предлагает добавить в лист:\n"
+            f"{display}\n\n"
+            f"Чтобы добавить — нажми «Внести в лист» и введи этот юз.",
+        )
+        await update.message.reply_text(
+            f"✅ Отправлено! Я проверю и добавлю если нужно.",
+            reply_markup=kb_main(user.id == ADMIN_ID)
+        )
 
     else:
         user_states.pop(user.id, None)
