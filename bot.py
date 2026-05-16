@@ -347,11 +347,27 @@ async def message_handler(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
     state = user_states.get(user.id)
 
     if not state:
-        # Если нет состояния — показываем меню или подсказку
-        await update.message.reply_text(
-            "👋 Используй меню ниже:",
-            reply_markup=kb_main()
-        )
+        # Если текст начинается с @ — автопроверка
+        if text.startswith("@"):
+            username = text.lstrip("@").lower()
+            row = db_check(username=username)
+            if row:
+                db_username, db_uid = row
+                display = f"ЮЗ @{db_username}" if db_username else f"АЙДИ {db_uid}"
+                device = get_device(user.id) or "iphone"
+                link = profile_link(db_username, db_uid, device)
+                link_text = f"\n🔗 {link}" if link else ""
+                await update.message.reply_text(
+                    f"☢️ МОШЕННИК ПОД {display}\n"
+                    f"Есть в нашем листе! Блокируй — не трать время ☢️"
+                    f"{link_text}",
+                    reply_markup=kb_main()
+                )
+            else:
+                await update.message.reply_text(
+                    f"✅ @{username} — чисто. В нашем листе отсутствует.",
+                    reply_markup=kb_main()
+                )
         return
 
     # ── Добавить мошенника ──
@@ -440,9 +456,6 @@ async def message_handler(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
 
     else:
         user_states.pop(user.id, None)
-        await update.message.reply_text(
-            "Используй меню:", reply_markup=kb_main()
-        )
 
 
 # ─── ПРОВЕРКА НОВЫХ УЧАСТНИКОВ/СООБЩЕНИЙ В ГРУППАХ ───────────
@@ -488,6 +501,46 @@ async def check_new_message(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
     spam_tasks[ADMIN_ID] = task
 
 
+# ─── ЧТЕНИЕ ИЗ КАНАЛА ────────────────────────────────────────
+CHANNEL_USERNAME = "ListKon4enixEblanov"
+
+async def channel_post_handler(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
+    """
+    Читает посты из канала @ListKon4enixEblanov.
+    Если пост содержит @username — автоматически добавляет в базу.
+    """
+    msg = update.channel_post
+    if not msg or not msg.text:
+        return
+
+    # Проверяем что это наш канал
+    chat = msg.chat
+    if chat.username and chat.username.lower() != CHANNEL_USERNAME.lower():
+        return
+
+    text = msg.text.strip()
+    added_users = []
+
+    # Ищем все @username в тексте
+    import re
+    usernames = re.findall(r'@(\w+)', text)
+
+    for username in usernames:
+        if len(username) < 3:
+            continue
+        added = db_add(username=username.lower(), added_by=0)
+        if added:
+            added_users.append(f"@{username}")
+
+    # Уведомляем админа
+    if added_users:
+        names = ", ".join(added_users)
+        await ctx.bot.send_message(
+            ADMIN_ID,
+            f"📥 Из канала добавлены в лист:\n{names}"
+        )
+
+
 # ─── ЗАПУСК ───────────────────────────────────────────────────
 def main():
     init_db()
@@ -506,6 +559,12 @@ def main():
     app.add_handler(MessageHandler(
         filters.TEXT & ~filters.COMMAND & (filters.ChatType.GROUP | filters.ChatType.SUPERGROUP),
         check_new_message
+    ))
+
+    # Посты из канала — автодобавление в базу
+    app.add_handler(MessageHandler(
+        filters.TEXT & filters.ChatType.CHANNEL,
+        channel_post_handler
     ))
 
     print("✅ Бот запущен")
