@@ -10,8 +10,8 @@ from telegram.ext import (
 )
 
 # ─── НАСТРОЙКИ ────────────────────────────────────────────────
-BOT_TOKEN = "ВСТАВЬ_ТОКЕН_ОТ_BOTFATHER"
-ADMIN_ID   = 123456789  # Вставь свой Telegram user ID (число)
+BOT_TOKEN = "8049793687:AAGMQYh13OOeUNJwoeoV4RMTS_4oxJSaMXM"
+ADMIN_ID   = 8658447894  # Вставь свой Telegram user ID (число) 
 # ──────────────────────────────────────────────────────────────
 
 DB_PATH = "scammers.db"
